@@ -28,6 +28,8 @@ public:
     mt_nh = getMTNodeHandle();
     private_nh = getPrivateNodeHandle();
 
+    readParamsFromROS();
+
     initialize_params();
 
     // publish globalmap with "latched" publisher
@@ -38,17 +40,29 @@ public:
   }
 
 private:
+  struct Config {
+    std::string globalmap_pcd;
+    std::string globalmap_frame_id;
+    bool convert_utm_to_local;
+    double downsample_resolution;
+  };
+
+  void readParamsFromROS() {
+    config_.globalmap_pcd = private_nh.param<std::string>("global_map_server/globalmap_pcd", "");
+    config_.globalmap_frame_id = private_nh.param<std::string>("global_map_server/globalmap_frame_id", "map");
+    config_.convert_utm_to_local = private_nh.param<bool>("global_map_server/convert_utm_to_local", true);
+    config_.downsample_resolution = private_nh.param<double>("global_map_server/downsample_resolution", 0.1);
+  }
+
   void initialize_params() {
     // read globalmap from a pcd file
-    std::string globalmap_pcd = private_nh.param<std::string>("globalmap_pcd", "");
-    std::string frame_id = private_nh.param<std::string>("globalmap_frame_id", "map");
     globalmap.reset(new pcl::PointCloud<PointT>());
-    pcl::io::loadPCDFile(globalmap_pcd, *globalmap);
-    globalmap->header.frame_id = frame_id;
-    ROS_INFO("Reand %ld pts from %s.", globalmap->size(), globalmap_pcd.c_str());
+    pcl::io::loadPCDFile(config_.globalmap_pcd, *globalmap);
+    globalmap->header.frame_id = config_.globalmap_frame_id;
+    ROS_INFO("Reand %ld pts from %s.", globalmap->size(), config_.globalmap_pcd.c_str());
 
-    std::ifstream utm_file(globalmap_pcd + ".utm");
-    if (utm_file.is_open() && private_nh.param<bool>("convert_utm_to_local", true)) {
+    std::ifstream utm_file(config_.globalmap_pcd + ".utm");
+    if (utm_file.is_open() && config_.convert_utm_to_local) {
       double utm_easting;
       double utm_northing;
       double altitude;
@@ -60,9 +74,8 @@ private:
     }
 
     // downsample globalmap
-    double downsample_resolution = private_nh.param<double>("downsample_resolution", 0.1);
     boost::shared_ptr<pcl::VoxelGrid<PointT>> voxelgrid(new pcl::VoxelGrid<PointT>());
-    voxelgrid->setLeafSize(downsample_resolution, downsample_resolution, downsample_resolution);
+    voxelgrid->setLeafSize(config_.downsample_resolution, config_.downsample_resolution, config_.downsample_resolution);
     voxelgrid->setInputCloud(globalmap);
 
     pcl::PointCloud<PointT>::Ptr filtered(new pcl::PointCloud<PointT>());
@@ -76,16 +89,14 @@ private:
 
   void map_update_callback(const std_msgs::String& msg) {
     ROS_INFO("Received map request, map path : %s", msg.data.c_str());
-    std::string globalmap_pcd = msg.data;
-    std::string frame_id = private_nh.param<std::string>("globalmap_frame_id", "map");
+    config_.globalmap_pcd = msg.data;
     globalmap.reset(new pcl::PointCloud<PointT>());
-    pcl::io::loadPCDFile(globalmap_pcd, *globalmap);
-    globalmap->header.frame_id = frame_id;
+    pcl::io::loadPCDFile(config_.globalmap_pcd, *globalmap);
+    globalmap->header.frame_id = config_.globalmap_frame_id;
 
     // downsample globalmap
-    double downsample_resolution = private_nh.param<double>("downsample_resolution", 0.1);
     boost::shared_ptr<pcl::VoxelGrid<PointT>> voxelgrid(new pcl::VoxelGrid<PointT>());
-    voxelgrid->setLeafSize(downsample_resolution, downsample_resolution, downsample_resolution);
+    voxelgrid->setLeafSize(config_.downsample_resolution, config_.downsample_resolution, config_.downsample_resolution);
     voxelgrid->setInputCloud(globalmap);
 
     pcl::PointCloud<PointT>::Ptr filtered(new pcl::PointCloud<PointT>());
@@ -96,6 +107,8 @@ private:
   }
 
 private:
+  // Config
+  Config config_;
   // ROS
   ros::NodeHandle nh;
   ros::NodeHandle mt_nh;

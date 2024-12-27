@@ -21,42 +21,12 @@
 
 #include <pclomp/ndt_omp.h>
 #include <pcl/filters/voxel_grid.h>
-#include <fast_gicp/ndt/ndt_cuda.hpp>
 
 #include <hdl_localization/ScanMatchingStatus.h>
-#include <hdl_global_localization/SetGlobalMap.h>
-#include <hdl_global_localization/QueryGlobalLocalization.h>
 #include "hdl_localization/logger.h"
 #include "hdl_localization/pose_estimator.hpp"
-#include "hdl_localization/delta_estimater.hpp"
 
 namespace hdl_localization {
-
-struct LocParams {
-  std::string robot_odom_frame_id = "robot_odom";
-  std::string odom_child_frame_id = "base_link";
-  bool use_imu = true;
-  bool invert_acc = false;
-  bool invert_gyro = false;
-  bool use_global_localization = true;
-  std::string reg_method = "NDT_OMP";
-  std::string ndt_neighbor_search_method = "DIRECT7";
-  double ndt_neighbor_search_radius = 2.0;
-  double ndt_resolution = 1.0;
-  double downsample_resolution = 0.1;
-  bool specify_init_pose = true;
-  double init_pos_x = 0.0;
-  double init_pos_y = 0.0;
-  double init_pos_z = 0.0;
-  double init_ori_w = 1.0;
-  double init_ori_x = 0.0;
-  double init_ori_y = 0.0;
-  double init_ori_z = 0.0;
-  double cool_time_duration = 0.5;
-  bool enable_robot_odometry_prediction = false;
-  double status_max_correspondence_dist = 0.5;
-  double status_max_valid_point_dist = 25.0;
-};
 
 class HdlLocalizationNodelet : public nodelet::Nodelet {
 public:
@@ -85,43 +55,57 @@ public:
     pose_pub = nh.advertise<nav_msgs::Odometry>("/odom", 5, false);
     status_pub = nh.advertise<ScanMatchingStatus>("/status", 5, false);
     aligned_pub = nh.advertise<sensor_msgs::PointCloud2>("/aligned_points", 5, false);
-
-    // todo::可去除
-    if (params.use_global_localization) {
-      LOG_INFO("Wait for global localization services...");
-      ros::service::waitForService("/hdl_global_localization/set_global_map");
-      ros::service::waitForService("/hdl_global_localization/query");
-      set_global_map_service = nh.serviceClient<hdl_global_localization::SetGlobalMap>("/hdl_global_localization/set_global_map");
-      query_global_localization_service = nh.serviceClient<hdl_global_localization::QueryGlobalLocalization>("/hdl_global_localization/query");
-      relocalize_server = nh.advertiseService("/relocalize", &HdlLocalizationNodelet::relocalize, this);
-    }
   }
 
 private:
+  struct LocParams {
+    std::string robot_odom_frame_id = "robot_odom";
+    std::string odom_child_frame_id = "base_link";
+    bool use_imu = true;
+    bool invert_acc = false;
+    bool invert_gyro = false;
+    std::string reg_method = "NDT_OMP";
+    std::string ndt_neighbor_search_method = "DIRECT7";
+    double ndt_neighbor_search_radius = 2.0;
+    double ndt_resolution = 1.0;
+    double downsample_resolution = 0.1;
+    bool specify_init_pose = true;
+    double init_pos_x = 0.0;
+    double init_pos_y = 0.0;
+    double init_pos_z = 0.0;
+    double init_ori_w = 1.0;
+    double init_ori_x = 0.0;
+    double init_ori_y = 0.0;
+    double init_ori_z = 0.0;
+    double cool_time_duration = 0.5;
+    bool enable_robot_odometry_prediction = false;
+    double status_max_correspondence_dist = 0.5;
+    double status_max_valid_point_dist = 25.0;
+  };
+
   void load_param_from_ros() {
-    params.robot_odom_frame_id = private_nh.param<std::string>("robot_odom_frame_id", "robot_odom");
-    params.odom_child_frame_id = private_nh.param<std::string>("odom_child_frame_id", "base_link");
-    params.use_imu = private_nh.param<bool>("use_imu", true);
-    params.invert_acc = private_nh.param<bool>("invert_acc", false);
-    params.invert_gyro = private_nh.param<bool>("invert_gyro", false);
-    params.use_global_localization = private_nh.param<bool>("use_global_localization", true);
-    params.reg_method = private_nh.param<std::string>("reg_method", "NDT_OMP");
-    params.ndt_neighbor_search_method = private_nh.param<std::string>("ndt_neighbor_search_method", "DIRECT7");
-    params.ndt_neighbor_search_radius = private_nh.param<double>("ndt_neighbor_search_radius", 2.0);
-    params.ndt_resolution = private_nh.param<double>("ndt_resolution", 1.0);
-    params.downsample_resolution = private_nh.param<double>("downsample_resolution", 0.1);
-    params.specify_init_pose = private_nh.param<bool>("specify_init_pose", true);
-    params.init_pos_x = private_nh.param<double>("init_pos_x", 0.0);
-    params.init_pos_y = private_nh.param<double>("init_pos_y", 0.0);
-    params.init_pos_z = private_nh.param<double>("init_pos_z", 0.0);
-    params.init_ori_w = private_nh.param<double>("init_ori_w", 1.0);
-    params.init_ori_x = private_nh.param<double>("init_ori_x", 0.0);
-    params.init_ori_y = private_nh.param<double>("init_ori_y", 0.0);
-    params.init_ori_z = private_nh.param<double>("init_ori_z", 0.0);
-    params.cool_time_duration = private_nh.param<double>("cool_time_duration", 0.5);
-    params.enable_robot_odometry_prediction = private_nh.param<bool>("enable_robot_odometry_prediction", false);
-    params.status_max_correspondence_dist = private_nh.param<double>("status_max_correspondence_dist", 0.5);
-    params.status_max_valid_point_dist = private_nh.param<double>("status_max_valid_point_dist", 25.0);
+    params.robot_odom_frame_id = private_nh.param<std::string>("hdl_loc/robot_odom_frame_id", "robot_odom");
+    params.odom_child_frame_id = private_nh.param<std::string>("hdl_loc/odom_child_frame_id", "base_link");
+    params.use_imu = private_nh.param<bool>("hdl_loc/use_imu", true);
+    params.invert_acc = private_nh.param<bool>("hdl_loc/invert_acc", false);
+    params.invert_gyro = private_nh.param<bool>("hdl_loc/invert_gyro", false);
+    params.reg_method = private_nh.param<std::string>("hdl_loc/reg_method", "NDT_OMP");
+    params.ndt_neighbor_search_method = private_nh.param<std::string>("hdl_loc/ndt_neighbor_search_method", "DIRECT7");
+    params.ndt_neighbor_search_radius = private_nh.param<double>("hdl_loc/ndt_neighbor_search_radius", 2.0);
+    params.ndt_resolution = private_nh.param<double>("hdl_loc/ndt_resolution", 1.0);
+    params.downsample_resolution = private_nh.param<double>("hdl_loc/downsample_resolution", 0.1);
+    params.specify_init_pose = private_nh.param<bool>("hdl_loc/specify_init_pose", true);
+    params.init_pos_x = private_nh.param<double>("hdl_loc/init_pos_x", 0.0);
+    params.init_pos_y = private_nh.param<double>("hdl_loc/init_pos_y", 0.0);
+    params.init_pos_z = private_nh.param<double>("hdl_loc/init_pos_z", 0.0);
+    params.init_ori_w = private_nh.param<double>("hdl_loc/init_ori_w", 1.0);
+    params.init_ori_x = private_nh.param<double>("hdl_loc/init_ori_x", 0.0);
+    params.init_ori_y = private_nh.param<double>("hdl_loc/init_ori_y", 0.0);
+    params.init_ori_z = private_nh.param<double>("hdl_loc/init_ori_z", 0.0);
+    params.cool_time_duration = private_nh.param<double>("hdl_loc/cool_time_duration", 0.5);
+    params.enable_robot_odometry_prediction = private_nh.param<bool>("hdl_loc/enable_robot_odometry_prediction", false);
+    params.status_max_correspondence_dist = private_nh.param<double>("hdl_loc/status_max_correspondence_dist", 0.5);
+    params.status_max_valid_point_dist = private_nh.param<double>("hdl_loc/status_max_valid_point_dist", 25.0);
   }
 
   void initialize_params() {
@@ -132,11 +116,6 @@ private:
 
     LOG_INFO("Create registration method for localization.");
     registration = create_registration();
-
-    // global localization
-    LOG_INFO("Create registration method for fallback during relocalization.");
-    relocalizing = false;
-    delta_estimater.reset(new DeltaEstimater(registration));
 
     // initialize pose estimator
     if (params.specify_init_pose) {
@@ -169,30 +148,6 @@ private:
           LOG_WARN("default method is selected (KDTREE).");
         }
         ndt->setNeighborhoodSearchMethod(pclomp::KDTREE);
-      }
-      return ndt;
-    } else if (params.reg_method.find("NDT_CUDA") != std::string::npos) {
-      LOG_INFO("NDT_CUDA is selected.");
-      boost::shared_ptr<fast_gicp::NDTCuda<PointT, PointT>> ndt(new fast_gicp::NDTCuda<PointT, PointT>);
-      ndt->setResolution(params.ndt_resolution);
-
-      if (params.reg_method.find("D2D") != std::string::npos) {
-        ndt->setDistanceMode(fast_gicp::NDTDistanceMode::D2D);
-      } else if (params.reg_method.find("P2D") != std::string::npos) {
-        ndt->setDistanceMode(fast_gicp::NDTDistanceMode::P2D);
-      }
-
-      if (params.ndt_neighbor_search_method == "DIRECT1") {
-        LOG_INFO("search_method DIRECT1 is selected.");
-        ndt->setNeighborSearchMethod(fast_gicp::NeighborSearchMethod::DIRECT1);
-      } else if (params.ndt_neighbor_search_method == "DIRECT7") {
-        LOG_INFO("search_method DIRECT7 is selected.");
-        ndt->setNeighborSearchMethod(fast_gicp::NeighborSearchMethod::DIRECT7);
-      } else if (params.ndt_neighbor_search_method == "DIRECT_RADIUS") {
-        LOG_INFO("search_method DIRECT_RADIUS is selected : %f.", params.ndt_neighbor_search_radius);
-        ndt->setNeighborSearchMethod(fast_gicp::NeighborSearchMethod::DIRECT_RADIUS, params.ndt_neighbor_search_radius);
-      } else {
-        LOG_WARN("invalid search method was given!");
       }
       return ndt;
     }
@@ -246,10 +201,6 @@ private:
     auto filtered = downsample(cloud);
     last_scan = filtered;
 
-    if (relocalizing) {
-      delta_estimater->add_frame(filtered);
-    }
-
     std::lock_guard<std::mutex> estimator_lock(pose_estimator_mutex);
     if (!pose_estimator) {
       LOG_ERROR("Waiting for initial pose input!");
@@ -282,8 +233,7 @@ private:
       if (tf_buffer.canTransform(params.odom_child_frame_id, last_stamp, params.odom_child_frame_id, stamp, params.robot_odom_frame_id, ros::Duration(0.1))) {
         odom_delta = tf_buffer.lookupTransform(params.odom_child_frame_id, last_stamp, params.odom_child_frame_id, stamp, params.robot_odom_frame_id, ros::Duration(0));
       } else if (tf_buffer.canTransform(params.odom_child_frame_id, last_stamp, params.odom_child_frame_id, ros::Time(0), params.robot_odom_frame_id, ros::Duration(0))) {
-        odom_delta =
-          tf_buffer.lookupTransform(params.odom_child_frame_id, last_stamp, params.odom_child_frame_id, ros::Time(0), params.robot_odom_frame_id, ros::Duration(0));
+        odom_delta = tf_buffer.lookupTransform(params.odom_child_frame_id, last_stamp, params.odom_child_frame_id, ros::Time(0), params.robot_odom_frame_id, ros::Duration(0));
       }
 
       if (odom_delta.header.stamp.isZero()) {
@@ -321,64 +271,6 @@ private:
     globalmap = cloud;
 
     registration->setInputTarget(globalmap);
-
-    // todo::去除
-    if (params.use_global_localization) {
-      LOG_INFO("Set globalmap for global localization.");
-      hdl_global_localization::SetGlobalMap srv;
-      pcl::toROSMsg(*globalmap, srv.request.global_map);
-
-      if (!set_global_map_service.call(srv)) {
-        LOG_WARN("Failed to set global map!");
-      } else {
-        LOG_INFO("done");
-      }
-    }
-  }
-
-  /**
-   * @brief perform global localization to relocalize the sensor position
-   * @param
-   */
-  bool relocalize(std_srvs::EmptyRequest& req, std_srvs::EmptyResponse& res) {
-    if (last_scan == nullptr) {
-      LOG_ERROR("No scan has been received!");
-      return false;
-    }
-
-    relocalizing = true;
-    delta_estimater->reset();
-    pcl::PointCloud<PointT>::ConstPtr scan = last_scan;
-
-    hdl_global_localization::QueryGlobalLocalization srv;
-    pcl::toROSMsg(*scan, srv.request.cloud);
-    srv.request.max_num_candidates = 1;
-
-    if (!query_global_localization_service.call(srv) || srv.response.poses.empty()) {
-      relocalizing = false;
-      LOG_WARN("Global localization failed!");
-      return false;
-    }
-
-    const auto& result = srv.response.poses[0];
-
-    LOG_INFO("--- Global localization result ---");
-    LOG_INFO("Trans : %f %f %f", result.position.x, result.position.y, result.position.z);
-    LOG_INFO("Quat  : %f %f %f %f", result.orientation.x, result.orientation.y, result.orientation.z, result.orientation.w);
-    LOG_INFO("Error : %f", srv.response.errors[0]);
-    LOG_INFO("Inlier: %f", srv.response.inlier_fractions[0]);
-
-    Eigen::Isometry3f pose = Eigen::Isometry3f::Identity();
-    pose.linear() = Eigen::Quaternionf(result.orientation.w, result.orientation.x, result.orientation.y, result.orientation.z).toRotationMatrix();
-    pose.translation() = Eigen::Vector3f(result.position.x, result.position.y, result.position.z);
-    pose = pose * delta_estimater->estimated_delta();
-
-    std::lock_guard<std::mutex> lock(pose_estimator_mutex);
-    pose_estimator.reset(new hdl_localization::PoseEstimator(registration, pose.translation(), Eigen::Quaternionf(pose.linear()), params.cool_time_duration));
-
-    relocalizing = false;
-
-    return true;
   }
 
   /**
@@ -548,8 +440,9 @@ private:
 
   // imu input buffer
   std::mutex imu_data_mutex;
-  // todo::使用dqueu存储
   std::deque<sensor_msgs::ImuConstPtr> imu_data;
+
+  pcl::PointCloud<PointT>::ConstPtr last_scan;
 
   // globalmap and registration method
   pcl::PointCloud<PointT>::Ptr globalmap;
@@ -560,16 +453,6 @@ private:
   // pose estimator
   std::mutex pose_estimator_mutex;
   std::unique_ptr<hdl_localization::PoseEstimator> pose_estimator;
-
-  // global localization
-  std::atomic_bool relocalizing;
-  // 全局重定位过程中,简单的激光帧间累计
-  std::unique_ptr<DeltaEstimater> delta_estimater;
-
-  pcl::PointCloud<PointT>::ConstPtr last_scan;
-  ros::ServiceServer relocalize_server;
-  ros::ServiceClient set_global_map_service;
-  ros::ServiceClient query_global_localization_service;
 };
 }  // namespace hdl_localization
 

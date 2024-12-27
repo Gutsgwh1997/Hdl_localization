@@ -18,7 +18,9 @@ endif()
 # pcl 1.7 causes a segfault when it is built with debug mode
 set(CMAKE_BUILD_TYPE "RELEASE")
 
-# add_definitions(-DUSE_ROS1)
+add_definitions(-DUSE_ROS1)
+
+add_subdirectory(third_party/ndt_omp)
 
 find_package(catkin REQUIRED COMPONENTS
   nodelet
@@ -33,9 +35,6 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   geometry_msgs
   message_generation
-  ndt_omp
-  fast_gicp
-  hdl_global_localization
 )
 
 find_package(PCL 1.7 REQUIRED)
@@ -87,6 +86,7 @@ add_library(hdl_localization_nodelet
 target_link_libraries(hdl_localization_nodelet
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
+  ndt_omp
 )
 add_dependencies(hdl_localization_nodelet ${PROJECT_NAME}_gencpp)
 
@@ -95,5 +95,5 @@ add_library(globalmap_server_nodelet apps/globalmap_server_nodelet.cpp)
 target_link_libraries(globalmap_server_nodelet
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
+  ndt_omp
 )
-
