@@ -1,0 +1,38 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- arguments -->
+  <arg name="nodelet_manager" default="rs_m1_nodelet_manager" />
+  <arg name="points_topic" default="/os1_points" />
+  <!-- input clouds are transformed in odom_child_frame, and then localization is performed in that frame -->
+  <!-- this is useful to match the LIDAR and IMU coodinate systems -->
+  <arg name="odom_child_frame_id" default="ouster" />
+
+  <!-- optional arguments -->
+  <arg name="use_imu" default="false" />
+  <arg name="invert_imu_acc" default="false" />
+  <arg name="invert_imu_gyro" default="false" />
+  <arg name="use_global_localization" default="true" />
+  <arg name="imu_topic" default="/imu/data_raw" />
+  <arg name="enable_robot_odometry_prediction" value="false" />
+  <arg name="robot_odom_frame_id" value="odom" />
+  <arg name="plot_estimation_errors" value="false" />
+
+  <include file="$(find hdl_global_localization)/launch/hdl_global_localization.launch" if="$(arg use_global_localization)" />
+
+  <!-- in case you use velodyne_driver, comment out the following line -->
+  <node pkg="nodelet" type="nodelet" name="$(arg nodelet_manager)" args="manager" output="screen"/>
+
+  <rosparam command="load" file="$(find hdl_localization)/config/hdl_loc_rs_m1.yaml" />
+
+    <!-- globalmap_server_nodelet -->
+    <node pkg="nodelet" type="nodelet" name="globalmap_server_nodelet" args="load hdl_localization/GlobalmapServerNodelet $(arg nodelet_manager)">
+    </node>
+
+    <!-- hdl_localization_nodelet -->
+    <node pkg="nodelet" type="nodelet" name="hdl_localization_nodelet" args="load hdl_localization/HdlLocalizationNodelet $(arg nodelet_manager)">
+      <remap from="/velodyne_points" to="$(arg points_topic)" />
+      <remap from="/gpsimu_driver/imu_data" to="$(arg imu_topic)" />
+    </node>
+
+    <node pkg="hdl_localization" type="plot_status.py" name="plot_estimation_errors" if="$(arg plot_estimation_errors)" />
+</launch>

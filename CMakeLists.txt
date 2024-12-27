@@ -18,6 +18,8 @@ endif()
 # pcl 1.7 causes a segfault when it is built with debug mode
 set(CMAKE_BUILD_TYPE "RELEASE")
 
+# add_definitions(-DUSE_ROS1)
+
 find_package(catkin REQUIRED COMPONENTS
   nodelet
   tf2

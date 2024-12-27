@@ -42,6 +42,10 @@ PoseEstimator::PoseEstimator(pcl::Registration<PointT, PointT>::Ptr& registratio
 
   PoseSystem system;
   ukf.reset(new kkl::alg::UnscentedKalmanFilterX<float, PoseSystem>(system, 16, 6, 7, process_noise, measurement_noise, mean, cov));
+
+  init_stamp = 0.0;
+  prev_stamp = 0.0;
+  last_correction_stamp = 0.0;
 }
 
 PoseEstimator::~PoseEstimator() {}
@@ -49,20 +53,18 @@ PoseEstimator::~PoseEstimator() {}
 /**
  * @brief predict
  * @param stamp    timestamp
- * @param acc      acceleration
- * @param gyro     angular velocity
  */
-void PoseEstimator::predict(const ros::Time& stamp) {
-  if (init_stamp.is_zero()) {
+void PoseEstimator::predict(double stamp) {
+  if (init_stamp == 0.0) {
     init_stamp = stamp;
   }
 
-  if ((stamp - init_stamp).toSec() < cool_time_duration || prev_stamp.is_zero() || prev_stamp == stamp) {
+  if ((stamp - init_stamp) < cool_time_duration || prev_stamp == 0.0 || prev_stamp == stamp) {
     prev_stamp = stamp;
     return;
   }
 
-  double dt = (stamp - prev_stamp).toSec();
+  double dt = (stamp - prev_stamp);
   prev_stamp = stamp;
 
   ukf->setProcessNoiseCov(process_noise * dt);
@@ -77,17 +79,17 @@ void PoseEstimator::predict(const ros::Time& stamp) {
  * @param acc      acceleration
  * @param gyro     angular velocity
  */
-void PoseEstimator::predict(const ros::Time& stamp, const Eigen::Vector3f& acc, const Eigen::Vector3f& gyro) {
-  if (init_stamp.is_zero()) {
+void PoseEstimator::predict(double stamp, const Eigen::Vector3f& acc, const Eigen::Vector3f& gyro) {
+  if (init_stamp == 0.0) {
     init_stamp = stamp;
   }
 
-  if ((stamp - init_stamp).toSec() < cool_time_duration || prev_stamp.is_zero() || prev_stamp == stamp) {
+  if ((stamp - init_stamp) < cool_time_duration || prev_stamp == 0.0 || prev_stamp == stamp) {
     prev_stamp = stamp;
     return;
   }
 
-  double dt = (stamp - prev_stamp).toSec();
+  double dt = (stamp - prev_stamp);
   prev_stamp = stamp;
 
   ukf->setProcessNoiseCov(process_noise * dt);
@@ -140,8 +142,8 @@ void PoseEstimator::predict_odom(const Eigen::Matrix4f& odom_delta) {
  * @param cloud   input cloud
  * @return cloud aligned to the globalmap
  */
-pcl::PointCloud<PoseEstimator::PointT>::Ptr PoseEstimator::correct(const ros::Time& stamp, const pcl::PointCloud<PointT>::ConstPtr& cloud) {
-  if (init_stamp.is_zero()) {
+pcl::PointCloud<PoseEstimator::PointT>::Ptr PoseEstimator::correct(double stamp, const pcl::PointCloud<PointT>::ConstPtr& cloud) {
+  if (init_stamp == 0.0) {
     init_stamp = stamp;
   }
 
@@ -220,7 +222,7 @@ pcl::PointCloud<PoseEstimator::PointT>::Ptr PoseEstimator::correct(const ros::Ti
 }
 
 /* getters */
-ros::Time PoseEstimator::last_correction_time() const {
+double PoseEstimator::last_correction_time() const {
   return last_correction_stamp;
 }
 
